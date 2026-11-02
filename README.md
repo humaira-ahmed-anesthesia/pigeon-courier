@@ -33,4 +33,4 @@ python main.py
 
 ## Author
 
-Humaira Ahmed, BSN, RN. [Portfolio](https://humaira-ahmed-anesthesia.github.io/)
+Humaira Ahmed, BSN, RN. [Portfolio](https://humaira-ahmed-anesthesia.github.io/Electronic-Portfolio/)
