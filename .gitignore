@@ -1,0 +1,4 @@
+build/
+__pycache__/
+*-pygbag.ogg
+.DS_Store
