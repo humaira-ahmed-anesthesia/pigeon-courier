@@ -1,0 +1,89 @@
+<!-- Pigeon Courier loading screen: injected into pygbag's index.html by postbuild.py -->
+<style>
+  #pigeon-loader{position:fixed;inset:0;z-index:2147483000;background:#f5ebd7;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:18px;
+    font-family:Georgia,"Times New Roman",serif;color:#2b2318;overflow:hidden;cursor:default;transition:opacity .6s ease;-webkit-tap-highlight-color:transparent;user-select:none}
+  #pigeon-loader.gone{opacity:0;pointer-events:none}
+  #pigeon-loader .pl-title{font-size:clamp(28px,6vw,46px);letter-spacing:.02em;text-align:center;line-height:1.1;margin:0 16px}
+  #pigeon-loader .pl-title small{display:block;font-size:.42em;letter-spacing:.28em;text-transform:uppercase;color:#6b5a44;margin-bottom:8px}
+  #pigeon-loader .pl-sky{position:relative;width:min(560px,92vw);height:min(300px,42vh)}
+  #pigeon-loader .pl-trail{position:absolute;inset:0;width:100%;height:100%}
+  #pigeon-loader .pl-bird{position:absolute;left:0;top:0;width:96px;height:96px;margin:-48px 0 0 -48px;background:center/contain no-repeat;will-change:transform}
+  #pigeon-loader .pl-status{font-size:18px;color:#6b5a44;min-height:24px;text-align:center}
+  #pigeon-loader .pl-bar{width:min(320px,70vw);height:6px;border-radius:99px;background:#e2d3b5;overflow:hidden}
+  #pigeon-loader .pl-bar i{display:block;height:100%;width:4%;background:#8c9c6e;border-radius:99px;transition:width .4s ease}
+  #pigeon-loader.ready{cursor:pointer}
+  #pigeon-loader.ready .pl-bar{visibility:hidden}
+  #pigeon-loader.ready .pl-status{font-size:22px;color:#2b2318;animation:pl-pulse 1.4s ease-in-out infinite}
+  @keyframes pl-pulse{50%{opacity:.45}}
+  #pigeon-loader .pl-note{position:absolute;bottom:18px;font-size:13px;color:#8a7a62;text-align:center;margin:0 16px}
+  /* pygbag's own loading widgets stay hidden behind our screen */
+  #transfer{visibility:hidden}
+  #infobox{display:none!important}
+  @media (prefers-reduced-motion:reduce){#pigeon-loader .pl-status{animation:none}}
+</style>
+<div id="pigeon-loader" role="status" aria-live="polite">
+  <div class="pl-title"><small>WWII</small>Pigeon Courier</div>
+  <div class="pl-sky">
+    <svg class="pl-trail" viewBox="0 0 560 300" preserveAspectRatio="none" aria-hidden="true">
+      <path d="M40 150 C 140 40, 240 40, 280 150 S 420 260, 520 150 S 380 40, 280 150 S 140 260, 40 150" fill="none" stroke="#c9b48e" stroke-width="2" stroke-dasharray="2 10" stroke-linecap="round"/>
+    </svg>
+    <div class="pl-bird" id="pl-bird"></div>
+  </div>
+  <div class="pl-status" id="pl-status">Readying the loft&hellip;</div>
+  <div class="pl-bar"><i id="pl-bar"></i></div>
+  <div class="pl-note" id="pl-note">The first load takes about a minute. After that it's quicker.</div>
+</div>
+<script>
+(function(){
+  var root = document.getElementById("pigeon-loader");
+  if(!root) return;
+  var bird = document.getElementById("pl-bird"), statusEl = document.getElementById("pl-status"), bar = document.getElementById("pl-bar"), note = document.getElementById("pl-note");
+  var frames = ["loader/pigeon_fly_1.png","loader/pigeon_fly_2.png","loader/pigeon_fly_3.png","loader/pigeon_fly_2.png"];
+  frames.forEach(function(src){ var im = new Image(); im.src = src; });
+  var still = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  var t0 = performance.now(), frame = 0, lastFlap = 0, done = false, ready = false;
+  var lines = ["Readying the loft…","Checking the message canister…","Studying the map…","Waiting for clear skies…","Dodging hawks in practice…"];
+
+  // figure-eight flight path, matching the dotted trail
+  function pos(u){
+    var a = u * Math.PI * 2;
+    return { x: 0.5 + 0.43 * Math.sin(a), y: 0.5 - 0.36 * Math.sin(a) * Math.cos(a) * 2 };
+  }
+  function tick(now){
+    if(done) return;
+    var sky = bird.parentNode, w = sky.clientWidth, h = sky.clientHeight;
+    var u = still ? 0.12 : ((now - t0) / 9000) % 1;
+    var p = pos(u), q = pos((u + 0.01) % 1);
+    var tilt = Math.max(-18, Math.min(18, (q.y - p.y) * h * 4));
+    var flip = q.x < p.x ? -1 : 1;
+    bird.style.transform = "translate(" + (p.x * w) + "px," + (p.y * h) + "px) scaleX(" + flip + ") rotate(" + tilt + "deg)";
+    if(now - lastFlap > 110){ lastFlap = now; frame = (frame + 1) % frames.length; bird.style.backgroundImage = "url(" + frames[still ? 0 : frame] + ")"; }
+
+    var prog = document.getElementById("progress");
+    if(prog && prog.max){ var pct = Math.max(4, Math.min(100, 100 * prog.value / prog.max)); bar.style.width = pct + "%"; }
+    if(!ready){
+      var info = document.getElementById("infobox");
+      var txt = info ? info.innerText || "" : "";
+      if(/tap the pigeon|click|touch/i.test(txt)){ setReady(); }
+      else { statusEl.textContent = lines[Math.floor((now - t0) / 3500) % lines.length]; }
+      if(info && info.style.display === "none" && (now - t0) > 1500){ finish(); return; } // game started without needing a tap
+    }
+    requestAnimationFrame(tick);
+  }
+  function setReady(){
+    ready = true; root.classList.add("ready");
+    statusEl.textContent = "Tap the pigeon to start";
+    note.textContent = "Tap anywhere if the pigeon is too quick for you.";
+  }
+  function finish(){
+    if(done) return; done = true;
+    root.classList.add("gone");
+    setTimeout(function(){ if(root.parentNode) root.parentNode.removeChild(root); }, 700);
+  }
+  window.pigeonLoaderDone = finish;  // main.py calls this once the game is running
+  // the tap itself counts as the browser's "user gesture" that unlocks sound; then we get out of the way
+  root.addEventListener("click", function(){ if(ready) setTimeout(finish, 150); });
+  root.addEventListener("touchend", function(){ if(ready) setTimeout(finish, 150); }, {passive:true});
+  requestAnimationFrame(tick);
+})();
+</script>

@@ -31,6 +31,9 @@ jobs:
           python -m pip install pygbag==0.9.3
           python -m pygbag --build --title "WWII Pigeon Courier" .
 
+      - name: Add the pigeon loading screen
+        run: python .github/loader/postbuild.py
+
       - uses: actions/upload-pages-artifact@v3
         with:
           path: build/web

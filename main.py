@@ -1301,6 +1301,13 @@ async def main():
     global hawks, flaks
     global progress_dirty, best_endless_score, finger_seen, run_hint_frames
 
+    # the web build shows a cream loading screen; tell it the game is up
+    if IS_WEB and _window is not None:
+        try:
+            _window.pigeonLoaderDone()
+        except Exception:
+            pass
+
     running = True
     score_counter = 0
     frame_counter = 0  # For tracking spawn timing
