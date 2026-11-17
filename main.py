@@ -48,9 +48,73 @@ except Exception as e:
 music_channel = None  # Channel for background music looping
 
 # -----------------------------------------
+# WEB OR DESKTOP, TOUCH OR KEYBOARD
+# -----------------------------------------
+IS_WEB = sys.platform == "emscripten"
+_window = None
+if IS_WEB:
+    try:
+        import platform as _web_platform  # pygbag's browser bridge
+        _window = _web_platform.window
+    except Exception as e:
+        print(f"No browser window available: {e}")
+
+
+def _detect_touch():
+    """True on phones and tablets. Add ?mobile=1 or ?mobile=0 to the URL to force it."""
+    if _window is None:
+        return False
+    try:
+        query = str(_window.location.search)
+        if "mobile=1" in query:
+            return True
+        if "mobile=0" in query:
+            return False
+        return bool(_window.matchMedia("(pointer: coarse)").matches)
+    except Exception:
+        return False
+
+
+IS_TOUCH = _detect_touch()
+
+
+def is_portrait():
+    if _window is None:
+        return False
+    try:
+        return int(_window.innerHeight) > int(_window.innerWidth)
+    except Exception:
+        return False
+
+
+def _screen_aspect():
+    """height / width of the browser window, for sizing the portrait game"""
+    try:
+        return int(_window.innerHeight) / max(1, int(_window.innerWidth))
+    except Exception:
+        return 844 / 390   # a typical iPhone
+
+
+def _force_portrait():
+    if os.environ.get("PIGEON_PORTRAIT") == "1":
+        return True
+    if _window is None:
+        return False
+    try:
+        return "portrait=1" in str(_window.location.search)
+    except Exception:
+        return False
+
+
+# -----------------------------------------
 # WINDOW / BASIC SETUP
+# Phones held upright get a tall portrait screen: same width and lanes,
+# just more of each background visible above and below.
 # -----------------------------------------
 WIDTH, HEIGHT = 800, 600
+PORTRAIT = _force_portrait() or (IS_TOUCH and is_portrait())
+if PORTRAIT:
+    HEIGHT = max(1200, min(1800, int(round(WIDTH * _screen_aspect()))))
 WIN = pygame.display.set_mode((WIDTH, HEIGHT))
 pygame.display.set_caption("WWII Pigeon Courier")
 
@@ -69,11 +133,11 @@ ROAD_EDGE = (120, 120, 120)
 BAR_BG = (200, 200, 200)
 BAR_FILL_HEALTH = (200, 50, 50)
 
-font = pygame.font.Font(None, 28)
-small_font = pygame.font.Font(None, 22)
-title_font = pygame.font.Font(None, 56)
-large_font = pygame.font.Font(None, 40)
-message_font = pygame.font.Font(None, 20)  # For historical messages only
+font = pygame.font.Font(None, 34 if PORTRAIT else 28)
+small_font = pygame.font.Font(None, 30 if PORTRAIT else 22)
+title_font = pygame.font.Font(None, 64 if PORTRAIT else 56)
+large_font = pygame.font.Font(None, 54 if PORTRAIT else 40)
+message_font = pygame.font.Font(None, 30 if PORTRAIT else 20)  # For historical messages only
 
 # -----------------------------------------
 # STATES
@@ -121,46 +185,6 @@ def play_sound_effect(sound):
     """Play a sound effect if sound_on is True"""
     if sound_on and sound:
         sound.play()
-
-
-# -----------------------------------------
-# WEB OR DESKTOP, TOUCH OR KEYBOARD
-# -----------------------------------------
-IS_WEB = sys.platform == "emscripten"
-_window = None
-if IS_WEB:
-    try:
-        import platform as _web_platform  # pygbag's browser bridge
-        _window = _web_platform.window
-    except Exception as e:
-        print(f"No browser window available: {e}")
-
-
-def _detect_touch():
-    """True on phones and tablets. Add ?mobile=1 or ?mobile=0 to the URL to force it."""
-    if _window is None:
-        return False
-    try:
-        query = str(_window.location.search)
-        if "mobile=1" in query:
-            return True
-        if "mobile=0" in query:
-            return False
-        return bool(_window.matchMedia("(pointer: coarse)").matches)
-    except Exception:
-        return False
-
-
-IS_TOUCH = _detect_touch()
-
-
-def is_portrait():
-    if _window is None:
-        return False
-    try:
-        return int(_window.innerHeight) > int(_window.innerWidth)
-    except Exception:
-        return False
 
 
 # -----------------------------------------
@@ -230,15 +254,16 @@ def load_progress():
 load_progress()
 
 # Pause button in top-right corner
-settings_button_rect = pygame.Rect(WIDTH - 60, 10, 50, 50)
-
-# Settings menu layout
-settings_menu_rect = pygame.Rect(WIDTH // 2 - 200, HEIGHT // 2 - 175, 400, 350)
-settings_resume_button = pygame.Rect(settings_menu_rect.centerx - 150, settings_menu_rect.top + 80, 300, 40)
-settings_home_button = pygame.Rect(settings_menu_rect.centerx - 150, settings_menu_rect.top + 130, 300, 40)
-settings_restart_button = pygame.Rect(settings_menu_rect.centerx - 150, settings_menu_rect.top + 180, 300, 40)
-settings_sound_button = pygame.Rect(settings_menu_rect.centerx - 150, settings_menu_rect.top + 230, 300, 40)
-settings_music_button = pygame.Rect(settings_menu_rect.centerx - 150, settings_menu_rect.top + 280, 300, 40)
+if PORTRAIT:
+    settings_button_rect = pygame.Rect(WIDTH - 100, 14, 86, 86)
+    settings_menu_rect = pygame.Rect(WIDTH // 2 - 300, HEIGHT // 2 - 330, 600, 660)
+    _sb_w, _sb_h, _sb_gap, _sb_top = 500, 86, 108, 120
+else:
+    settings_button_rect = pygame.Rect(WIDTH - 60, 10, 50, 50)
+    settings_menu_rect = pygame.Rect(WIDTH // 2 - 200, HEIGHT // 2 - 175, 400, 350)
+    _sb_w, _sb_h, _sb_gap, _sb_top = 300, 40, 50, 80
+_settings_rows = [pygame.Rect(settings_menu_rect.centerx - _sb_w // 2, settings_menu_rect.top + _sb_top + i * _sb_gap, _sb_w, _sb_h) for i in range(5)]
+settings_resume_button, settings_home_button, settings_restart_button, settings_sound_button, settings_music_button = _settings_rows
 
 
 # -----------------------------------------
@@ -335,7 +360,8 @@ for lvl, fname in level_bg_files.items():
     try:
         img = pygame.image.load(fname).convert()
         orig_w, orig_h = img.get_width(), img.get_height()
-        scale = max(WIDTH / orig_w, (HEIGHT * 3) / orig_h)
+        scroll_room = 1.25 if PORTRAIT else 3   # portrait shows more of the picture at once
+        scale = max(WIDTH / orig_w, (HEIGHT * scroll_room) / orig_h)
         new_w, new_h = int(orig_w * scale), int(orig_h * scale)
         img = pygame.transform.smoothscale(img, (new_w, new_h))
         level_backgrounds[lvl] = img
@@ -343,16 +369,19 @@ for lvl, fname in level_bg_files.items():
         level_backgrounds[lvl] = None
 
 # Load home screen and level select screen
+MENU_ART_SIZE = (WIDTH, 600) if PORTRAIT else (WIDTH, HEIGHT)
+MENU_ART_Y = max(0, HEIGHT // 2 - 560) if PORTRAIT else 0
+
 try:
-    home_screen_img = pygame.transform.scale(
-        pygame.image.load("homescreen.jpg").convert(), (WIDTH, HEIGHT)
+    home_screen_img = pygame.transform.smoothscale(
+        pygame.image.load("homescreen.jpg").convert(), MENU_ART_SIZE
     )
 except:
     home_screen_img = None
 
 try:
-    level_screen_img = pygame.transform.scale(
-        pygame.image.load("level_main_screen.jpg").convert(), (WIDTH, HEIGHT)
+    level_screen_img = pygame.transform.smoothscale(
+        pygame.image.load("level_main_screen.jpg").convert(), MENU_ART_SIZE
     )
 except:
     level_screen_img = None
@@ -414,7 +443,8 @@ def draw_background():
         # Endless mode: continuous upward scrolling at same speed as story mode (bottom to top)
         if max_pan > 0:
             # Track previous position to detect loop completion
-            prev_scroll_y = int((max_pan - (bg_scroll_y - 0.25)) % max_pan) if bg_scroll_y > 0.25 else 0
+            step = 0.25 * (max_pan / 1200.0) if PORTRAIT else 0.25
+            prev_scroll_y = int((max_pan - (bg_scroll_y - step)) % max_pan) if bg_scroll_y > step else 0
             scroll_y = int((max_pan - bg_scroll_y) % max_pan)
             
             # Detect when background loops (goes from bottom back to top)
@@ -423,7 +453,7 @@ def draw_background():
                 difficulty_level = min(10, background_loops_completed + 1)  # Cap at level 10
         else:
             scroll_y = 0
-        bg_scroll_y += 0.25  # Scroll speed matched to story mode (was 2, now 0.25)
+        bg_scroll_y += (0.25 * (max_pan / 1200.0) if (PORTRAIT and max_pan > 0) else 0.25)  # Scroll speed matched to story mode
 
     x_offset = -(img_width - WIDTH) // 2
     WIN.blit(img, (x_offset, -scroll_y))
@@ -489,7 +519,7 @@ def lane_x_for_lane(lane_f, y):
 # PIGEON MOVEMENT
 # -----------------------------------------
 pigeon_width, pigeon_height = pigeon_frames[0].get_width(), pigeon_frames[0].get_height()
-pigeon_y = HEIGHT - 220
+pigeon_y = (HEIGHT * 2 // 3 - pigeon_height // 2) if PORTRAIT else HEIGHT - 220
 
 pigeon_lane_pos = (LANE_COUNT - 1) / 2
 pigeon_lane_target = pigeon_lane_pos
@@ -682,9 +712,9 @@ def draw_settings_button():
     pygame.draw.rect(WIN, TEXT_COLOR, settings_button_rect, 2, border_radius=8)
 
     cx, cy = settings_button_rect.center
-    bar_width = 6
-    bar_height = 24
-    gap = 8
+    bar_width = 10 if PORTRAIT else 6
+    bar_height = 40 if PORTRAIT else 24
+    gap = 14 if PORTRAIT else 8
 
     left_rect = pygame.Rect(cx - gap // 2 - bar_width, cy - bar_height // 2, bar_width, bar_height)
     right_rect = pygame.Rect(cx + gap // 2, cy - bar_height // 2, bar_width, bar_height)
@@ -826,14 +856,26 @@ flaks = []
 # -----------------------------------------
 # HOME SCREEN
 # -----------------------------------------
-start_button = pygame.Rect(WIDTH // 2 - 150, HEIGHT // 2 + 20, 300, 60)
-endless_button_home = pygame.Rect(WIDTH // 2 - 150, HEIGHT // 2 + 100, 300, 60)
-store_button_home = pygame.Rect(WIDTH // 2 - 150, HEIGHT // 2 + 180, 300, 60)
+if PORTRAIT:
+    _hb_top = MENU_ART_Y + 600 + 50
+    start_button = pygame.Rect(WIDTH // 2 - 260, _hb_top, 520, 100)
+    endless_button_home = pygame.Rect(WIDTH // 2 - 260, _hb_top + 130, 520, 100)
+    store_button_home = pygame.Rect(WIDTH // 2 - 260, _hb_top + 260, 520, 100)
+else:
+    start_button = pygame.Rect(WIDTH // 2 - 150, HEIGHT // 2 + 20, 300, 60)
+    endless_button_home = pygame.Rect(WIDTH // 2 - 150, HEIGHT // 2 + 100, 300, 60)
+    store_button_home = pygame.Rect(WIDTH // 2 - 150, HEIGHT // 2 + 180, 300, 60)
 
 
 def draw_home_screen():
     if home_screen_img:
-        WIN.blit(home_screen_img, (0, 0))
+        if PORTRAIT:
+            WIN.fill(PARCHMENT)
+            t1 = title_font.render("WWII", True, TEXT_COLOR)
+            t2 = title_font.render("Pigeon Courier", True, TEXT_COLOR)
+            WIN.blit(t1, t1.get_rect(center=(WIDTH // 2, MENU_ART_Y // 2 - 30)))
+            WIN.blit(t2, t2.get_rect(center=(WIDTH // 2, MENU_ART_Y // 2 + 30)))
+        WIN.blit(home_screen_img, (0, MENU_ART_Y))
     else:
         WIN.fill(PARCHMENT)
         title = title_font.render("WWII Pigeon Courier", True, TEXT_COLOR)
@@ -862,18 +904,13 @@ def draw_home_screen():
 
     # saved progress
     status = f"Missions: {len(completed_levels)}/10   Coins: {total_coins_collected}   Best endless: {best_endless_score}"
-    bar = pygame.Surface((WIDTH, 34), pygame.SRCALPHA)
+    bar_h = 60 if PORTRAIT else 34
+    bar = pygame.Surface((WIDTH, bar_h), pygame.SRCALPHA)
     bar.fill((245, 235, 215, 210))
-    WIN.blit(bar, (0, HEIGHT - 34))
+    WIN.blit(bar, (0, HEIGHT - bar_h))
     status_surf = small_font.render(status, True, TEXT_COLOR)
-    WIN.blit(status_surf, status_surf.get_rect(center=(WIDTH // 2, HEIGHT - 17)))
+    WIN.blit(status_surf, status_surf.get_rect(center=(WIDTH // 2, HEIGHT - bar_h // 2)))
 
-    if IS_TOUCH and is_portrait():
-        tip = pygame.Surface((WIDTH, 40), pygame.SRCALPHA)
-        tip.fill((40, 40, 50, 220))
-        WIN.blit(tip, (0, 0))
-        tip_surf = font.render("Turn your phone sideways for a bigger view", True, (255, 255, 255))
-        WIN.blit(tip_surf, tip_surf.get_rect(center=(WIDTH // 2, 20)))
 
     pygame.display.update()
 
@@ -881,7 +918,7 @@ def draw_home_screen():
 # -----------------------------------------
 # STORE
 # -----------------------------------------
-store_back_button = pygame.Rect(20, 20, 100, 40)
+store_back_button = pygame.Rect(24, 24, 170, 70) if PORTRAIT else pygame.Rect(20, 20, 100, 40)
 
 
 def draw_store():
@@ -948,7 +985,7 @@ PDSA_INFO = {
 
 level_buttons = []
 
-BTN_W, BTN_H = 120, 100
+BTN_W, BTN_H = (130, 130) if PORTRAIT else (120, 100)
 COLS = 5
 SPACING_X = 20     # horizontal gap between buttons
 SPACING_Y = 30     # vertical gap between rows
@@ -959,7 +996,7 @@ grid_width = COLS * BTN_W + (COLS - 1) * SPACING_X
 # Left edge so the grid is centered
 grid_left = (WIDTH - grid_width) // 2
 
-top_y = 150  # top position of the first row
+top_y = (MENU_ART_Y + 600 + 50) if PORTRAIT else 150  # top position of the first row
 
 for i in range(10):
     row = i // COLS
@@ -971,9 +1008,12 @@ for i in range(10):
     level_buttons.append(pygame.Rect(x, y, BTN_W, BTN_H))
 
 # ENDLESS BUTTON FOR LEVEL MENU - FIXED: This was missing!
-endless_button_menu = pygame.Rect(WIDTH // 2 - 150, HEIGHT - 100, 300, 60)
-
-back_button = pygame.Rect(20, 20, 100, 40)
+if PORTRAIT:
+    endless_button_menu = pygame.Rect(WIDTH // 2 - 260, HEIGHT - 170, 520, 100)
+    back_button = pygame.Rect(24, 24, 170, 70)
+else:
+    endless_button_menu = pygame.Rect(WIDTH // 2 - 150, HEIGHT - 100, 300, 60)
+    back_button = pygame.Rect(20, 20, 100, 40)
 
 
 def is_level_unlocked(level_num):
@@ -984,18 +1024,20 @@ def is_level_unlocked(level_num):
 
 def draw_level_menu():
     if level_screen_img:
-        WIN.blit(level_screen_img, (0, 0))
+        if PORTRAIT:
+            WIN.fill(PARCHMENT)
+        WIN.blit(level_screen_img, (0, MENU_ART_Y if PORTRAIT else 0))
     else:
         WIN.fill(PARCHMENT)
 
-    title = large_font.render("Select Mission", True, TEXT_COLOR)
-    WIN.blit(title, title.get_rect(center=(WIDTH // 2, 80)))
+    title = (title_font if PORTRAIT else large_font).render("Select Mission", True, TEXT_COLOR)
+    WIN.blit(title, title.get_rect(center=(WIDTH // 2, (MENU_ART_Y + 600 + 10) if PORTRAIT else 80)))
 
     pygame.draw.rect(WIN, MILITARY_GREEN, back_button, border_radius=8)
     pygame.draw.rect(WIN, TEXT_COLOR, back_button, 2, border_radius=8)
     WIN.blit(
-        small_font.render("BACK", True, TEXT_COLOR),
-        small_font.render("BACK", True, TEXT_COLOR).get_rect(center=back_button.center),
+        (font if PORTRAIT else small_font).render("BACK", True, TEXT_COLOR),
+        (font if PORTRAIT else small_font).render("BACK", True, TEXT_COLOR).get_rect(center=back_button.center),
     )
 
     for i, btn in enumerate(level_buttons):
@@ -1027,14 +1069,14 @@ def draw_level_menu():
     pygame.draw.rect(WIN, MILITARY_GREEN, endless_button_menu, border_radius=10)
     pygame.draw.rect(WIN, TEXT_COLOR, endless_button_menu, 2, border_radius=10)
     WIN.blit(
-        font.render("Endless Flight", True, TEXT_COLOR),
-        font.render("Endless Flight", True, TEXT_COLOR).get_rect(center=endless_button_menu.center),
+        (large_font if PORTRAIT else font).render("Endless Flight", True, TEXT_COLOR),
+        (large_font if PORTRAIT else font).render("Endless Flight", True, TEXT_COLOR).get_rect(center=endless_button_menu.center),
     )
 
     pygame.display.update()
 
 
-continue_button = pygame.Rect(WIDTH // 2 - 150, HEIGHT - 80, 300, 60)
+continue_button = pygame.Rect(WIDTH // 2 - 260, HEIGHT - 150, 520, 100) if PORTRAIT else pygame.Rect(WIDTH // 2 - 150, HEIGHT - 80, 300, 60)
 
 
 def wrap_text(text, font_obj, max_width):
@@ -1068,18 +1110,19 @@ def draw_message_screen():
     level_title = font.render(msg_data["title"], True, TEXT_COLOR)
     WIN.blit(level_title, level_title.get_rect(center=(WIDTH // 2, 90)))
 
-    msg_rect = pygame.Rect(50, 130, WIDTH - 100, 120)
+    message_lines = wrap_text(msg_data["message"], message_font, WIDTH - 120)
+    msg_lh = max(25, message_font.get_linesize() + 4)
+    msg_rect = pygame.Rect(50, 130, WIDTH - 100, max(120, len(message_lines) * msg_lh + 30))
     pygame.draw.rect(WIN, (255, 255, 230), msg_rect, border_radius=10)
     pygame.draw.rect(WIN, TEXT_COLOR, msg_rect, 3, border_radius=10)
 
-    message_lines = wrap_text(msg_data["message"], message_font, WIDTH - 120)
     y_offset = 145
     for line in message_lines:
         text_surf = message_font.render(line, True, TEXT_COLOR)
         WIN.blit(text_surf, (60, y_offset))
-        y_offset += 25
+        y_offset += msg_lh
 
-    context_y = 270
+    context_y = msg_rect.bottom + 20
     context_label = font.render("Historical Context:", True, TEXT_COLOR)
     WIN.blit(context_label, (50, context_y))
 
@@ -1088,7 +1131,7 @@ def draw_message_screen():
     for line in context_lines:
         text_surf = small_font.render(line, True, TEXT_COLOR)
         WIN.blit(text_surf, (50, y_offset))
-        y_offset += 22
+        y_offset += max(22, small_font.get_linesize() + 3)
 
     pygame.draw.rect(WIN, MILITARY_GREEN, continue_button, border_radius=10)
     pygame.draw.rect(WIN, TEXT_COLOR, continue_button, 2, border_radius=10)
@@ -1158,13 +1201,13 @@ def draw_settings_menu():
     pygame.draw.rect(WIN, PARCHMENT, settings_menu_rect, border_radius=10)
     pygame.draw.rect(WIN, TEXT_COLOR, settings_menu_rect, 2, border_radius=10)
 
-    title = large_font.render("Paused", True, TEXT_COLOR)
-    WIN.blit(title, title.get_rect(center=(settings_menu_rect.centerx, settings_menu_rect.top + 40)))
+    title = (title_font if PORTRAIT else large_font).render("Paused", True, TEXT_COLOR)
+    WIN.blit(title, title.get_rect(center=(settings_menu_rect.centerx, settings_menu_rect.top + (60 if PORTRAIT else 40))))
 
     def draw_btn(rect, label):
         pygame.draw.rect(WIN, MILITARY_GREEN, rect, border_radius=8)
         pygame.draw.rect(WIN, TEXT_COLOR, rect, 2, border_radius=8)
-        txt = font.render(label, True, TEXT_COLOR)
+        txt = (large_font if PORTRAIT else font).render(label, True, TEXT_COLOR)
         WIN.blit(txt, txt.get_rect(center=rect.center))
 
     draw_btn(settings_resume_button, "Resume")
@@ -1177,6 +1220,20 @@ def draw_settings_menu():
     draw_btn(settings_music_button, music_label)
 
     pygame.display.update()
+
+
+def game_over_buttons():
+    """Home, Restart and Watch Ad: in a row on a computer, stacked and big on a phone."""
+    if PORTRAIT:
+        w, h, gap = 520, 100, 26
+        x = WIDTH // 2 - w // 2
+        y = HEIGHT // 2 + 220
+        return [pygame.Rect(x, y + i * (h + gap), w, h) for i in range(3)]
+    btn_width, btn_height, btn_spacing = 200, 50, 20
+    total_width = btn_width * 3 + btn_spacing * 2
+    start_x = (WIDTH - total_width) // 2
+    btn_y = HEIGHT // 2 + 100
+    return [pygame.Rect(start_x + i * (btn_width + btn_spacing), btn_y, btn_width, btn_height) for i in range(3)]
 
 
 def reset_game():
@@ -1539,16 +1596,7 @@ async def main():
                         WIN.blit(game_over_text, game_over_text.get_rect(center=(WIDTH // 2, 100)))
                         
                         # Three buttons: Home, Restart, Watch Ad
-                        btn_width = 200
-                        btn_height = 50
-                        btn_spacing = 20
-                        total_width = btn_width * 3 + btn_spacing * 2
-                        start_x = (WIDTH - total_width) // 2
-                        btn_y = HEIGHT // 2 + 100
-                        
-                        home_button = pygame.Rect(start_x, btn_y, btn_width, btn_height)
-                        restart_button = pygame.Rect(start_x + btn_width + btn_spacing, btn_y, btn_width, btn_height)
-                        ad_button = pygame.Rect(start_x + (btn_width + btn_spacing) * 2, btn_y, btn_width, btn_height)
+                        home_button, restart_button, ad_button = game_over_buttons()
                         
                         pygame.draw.rect(WIN, MILITARY_GREEN, home_button, border_radius=10)
                         pygame.draw.rect(WIN, TEXT_COLOR, home_button, 2, border_radius=10)
@@ -1657,16 +1705,7 @@ async def main():
                         WIN.blit(game_over_text, game_over_text.get_rect(center=(WIDTH // 2, 100)))
                         
                         # Three buttons: Home, Restart, Watch Ad
-                        btn_width = 200
-                        btn_height = 50
-                        btn_spacing = 20
-                        total_width = btn_width * 3 + btn_spacing * 2
-                        start_x = (WIDTH - total_width) // 2
-                        btn_y = HEIGHT // 2 + 100
-                        
-                        home_button = pygame.Rect(start_x, btn_y, btn_width, btn_height)
-                        restart_button = pygame.Rect(start_x + btn_width + btn_spacing, btn_y, btn_width, btn_height)
-                        ad_button = pygame.Rect(start_x + (btn_width + btn_spacing) * 2, btn_y, btn_width, btn_height)
+                        home_button, restart_button, ad_button = game_over_buttons()
                         
                         pygame.draw.rect(WIN, MILITARY_GREEN, home_button, border_radius=10)
                         pygame.draw.rect(WIN, TEXT_COLOR, home_button, 2, border_radius=10)

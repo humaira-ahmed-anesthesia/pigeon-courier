@@ -9,7 +9,7 @@ A lane-dodging arcade game written in Python with Pygame. You fly a carrier pige
 Play it on a computer or a phone.
 
 - **Computer:** left and right arrow keys (or A and D) change lanes. Dragging with the mouse works too.
-- **Phone or tablet:** swipe left or right to change lanes. A long swipe crosses several lanes. Turn your phone sideways for the biggest view. To force phone controls on any device, add `?mobile=1` to the address.
+- **Phone or tablet:** swipe left or right to change lanes. A long swipe crosses several lanes. Held upright, the game switches to a tall portrait layout that fits the phone: the same six lanes, more of each background visible, the pigeon about a third of the way up the screen, and big buttons. To force phone controls on any device, add `?mobile=1` to the address; add `?portrait=1` to preview the portrait layout on a computer.
 - **Esc** or the pause button: open settings.
 - Collect worms and medpacks to restore health, and coins to spend in The Coop.
 - **Story Mode** has ten missions, from the V-2 rocket sites to the Dutch famine of 1944–45. **Endless Flight** gets harder the longer you survive.
