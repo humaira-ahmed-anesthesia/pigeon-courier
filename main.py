@@ -3,6 +3,9 @@ import sys
 import random
 import math
 import asyncio
+import json
+import os
+import time
 
 pygame.init()
 pygame.mixer.init()
@@ -118,6 +121,113 @@ def play_sound_effect(sound):
     """Play a sound effect if sound_on is True"""
     if sound_on and sound:
         sound.play()
+
+
+# -----------------------------------------
+# WEB OR DESKTOP, TOUCH OR KEYBOARD
+# -----------------------------------------
+IS_WEB = sys.platform == "emscripten"
+_window = None
+if IS_WEB:
+    try:
+        import platform as _web_platform  # pygbag's browser bridge
+        _window = _web_platform.window
+    except Exception as e:
+        print(f"No browser window available: {e}")
+
+
+def _detect_touch():
+    """True on phones and tablets. Add ?mobile=1 or ?mobile=0 to the URL to force it."""
+    if _window is None:
+        return False
+    try:
+        query = str(_window.location.search)
+        if "mobile=1" in query:
+            return True
+        if "mobile=0" in query:
+            return False
+        return bool(_window.matchMedia("(pointer: coarse)").matches)
+    except Exception:
+        return False
+
+
+IS_TOUCH = _detect_touch()
+
+
+def is_portrait():
+    if _window is None:
+        return False
+    try:
+        return int(_window.innerHeight) > int(_window.innerWidth)
+    except Exception:
+        return False
+
+
+# -----------------------------------------
+# SAVED PROGRESS (browser storage on the web, save.json on desktop)
+# -----------------------------------------
+SAVE_KEY = "pigeon-courier-save"
+try:
+    SAVE_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "save.json")
+except NameError:
+    SAVE_FILE = "save.json"
+
+best_endless_score = 0
+progress_dirty = False
+_last_save_time = 0.0
+
+
+def save_progress():
+    """Write missions completed, total coins, best endless score and sound settings."""
+    global progress_dirty, _last_save_time
+    data = json.dumps({
+        "completed_levels": sorted(completed_levels),
+        "total_coins": total_coins_collected,
+        "best_endless": best_endless_score,
+        "sound_on": sound_on,
+        "music_on": music_on,
+    })
+    try:
+        if IS_WEB:
+            if _window is not None:
+                _window.localStorage.setItem(SAVE_KEY, data)
+        else:
+            with open(SAVE_FILE, "w") as f:
+                f.write(data)
+    except Exception as e:
+        print(f"Could not save progress: {e}")
+    progress_dirty = False
+    _last_save_time = time.time()
+
+
+def load_progress():
+    global total_coins_collected, best_endless_score, sound_on, music_on
+    raw = None
+    try:
+        if IS_WEB:
+            if _window is not None:
+                raw = _window.localStorage.getItem(SAVE_KEY)
+        elif os.path.exists(SAVE_FILE):
+            with open(SAVE_FILE) as f:
+                raw = f.read()
+    except Exception as e:
+        print(f"Could not load progress: {e}")
+    if raw is None or str(raw) in ("", "null", "undefined", "None"):
+        return
+    try:
+        data = json.loads(str(raw))
+        completed_levels.clear()
+        completed_levels.update(int(n) for n in data.get("completed_levels", []) if 1 <= int(n) <= 10)
+        total_coins_collected = int(data.get("total_coins", 0))
+        best_endless_score = int(data.get("best_endless", 0))
+        sound_on = bool(data.get("sound_on", True))
+        music_on = bool(data.get("music_on", True))
+        print(f"Progress loaded: {len(completed_levels)} missions, {total_coins_collected} coins")
+    except Exception as e:
+        print(f"Saved progress was unreadable, starting fresh: {e}")
+
+
+load_progress()
 
 # Pause button in top-right corner
 settings_button_rect = pygame.Rect(WIDTH - 60, 10, 50, 50)
@@ -384,6 +494,49 @@ pigeon_y = HEIGHT - 220
 pigeon_lane_pos = (LANE_COUNT - 1) / 2
 pigeon_lane_target = pigeon_lane_pos
 LANE_CHANGE_SPEED = 0.18
+
+# Swipe controls: drag this far (in game pixels) to move one lane
+SWIPE_STEP = 60
+SWIPE_FLICK = 25
+swipe_anchor = None      # [x, y] where the current drag started
+swipe_moved = False
+finger_seen = False      # once real touch events arrive, ignore mouse-based swipes
+run_hint_frames = 0      # shows the "how to move" hint at the start of a run
+
+
+def move_lane(direction):
+    """direction: -1 for left, +1 for right"""
+    global pigeon_lane_target, pigeon_lean_dir
+    pigeon_lane_target = max(0, min(LANE_COUNT - 1, pigeon_lane_target + direction))
+    pigeon_lean_dir = direction
+
+
+def swipe_start(x, y):
+    global swipe_anchor, swipe_moved
+    swipe_anchor = [x, y]
+    swipe_moved = False
+
+
+def swipe_move(x):
+    """Each SWIPE_STEP of horizontal drag moves one lane, so a long swipe crosses several."""
+    global swipe_moved
+    if swipe_anchor is None:
+        return
+    dx = x - swipe_anchor[0]
+    if abs(dx) >= SWIPE_STEP:
+        move_lane(1 if dx > 0 else -1)
+        swipe_anchor[0] = x
+        swipe_moved = True
+
+
+def swipe_end(x):
+    """A quick flick that never reached SWIPE_STEP still counts as one lane."""
+    global swipe_anchor
+    if swipe_anchor is not None and not swipe_moved:
+        dx = x - swipe_anchor[0]
+        if abs(dx) >= SWIPE_FLICK:
+            move_lane(1 if dx > 0 else -1)
+    swipe_anchor = None
 
 
 def update_pigeon_lane():
@@ -706,6 +859,21 @@ def draw_home_screen():
         large_font.render("THE COOP", True, TEXT_COLOR),
         large_font.render("THE COOP", True, TEXT_COLOR).get_rect(center=store_button_home.center),
     )
+
+    # saved progress
+    status = f"Missions: {len(completed_levels)}/10   Coins: {total_coins_collected}   Best endless: {best_endless_score}"
+    bar = pygame.Surface((WIDTH, 34), pygame.SRCALPHA)
+    bar.fill((245, 235, 215, 210))
+    WIN.blit(bar, (0, HEIGHT - 34))
+    status_surf = small_font.render(status, True, TEXT_COLOR)
+    WIN.blit(status_surf, status_surf.get_rect(center=(WIDTH // 2, HEIGHT - 17)))
+
+    if IS_TOUCH and is_portrait():
+        tip = pygame.Surface((WIDTH, 40), pygame.SRCALPHA)
+        tip.fill((40, 40, 50, 220))
+        WIN.blit(tip, (0, 0))
+        tip_surf = font.render("Turn your phone sideways for a bigger view", True, (255, 255, 255))
+        WIN.blit(tip_surf, tip_surf.get_rect(center=(WIDTH // 2, 20)))
 
     pygame.display.update()
 
@@ -1041,6 +1209,10 @@ def reset_game():
     distance_traveled = 0
     lives = 3
 
+    global run_hint_frames, swipe_anchor
+    run_hint_frames = FPS * 4
+    swipe_anchor = None
+
     # Start with one hawk at a random lane
     hawks = [spawn_hawk()]
 
@@ -1070,6 +1242,7 @@ async def main():
     global sound_on, music_on
     global total_coins_collected
     global hawks, flaks
+    global progress_dirty, best_endless_score, finger_seen, run_hint_frames
 
     running = True
     score_counter = 0
@@ -1078,6 +1251,10 @@ async def main():
     while running:
         CLOCK.tick(FPS)
         await asyncio.sleep(0)
+
+        # save coins collected at most every few seconds
+        if progress_dirty and time.time() - _last_save_time > 3:
+            save_progress()
 
         if game_state == STATE_HOME:
             for event in pygame.event.get():
@@ -1161,6 +1338,7 @@ async def main():
                     mx, my = event.pos
                     if continue_button.collidepoint(mx, my):
                         completed_levels.add(current_level)
+                        save_progress()
                         
                         if current_level >= 10:
                             game_state = STATE_VICTORY
@@ -1200,9 +1378,11 @@ async def main():
                         frame_counter = 0
                     elif settings_sound_button.collidepoint(mx, my):
                         sound_on = not sound_on
+                        save_progress()
                     elif settings_music_button.collidepoint(mx, my):
                         music_on = not music_on
                         update_background_music()  # Update music immediately
+                        save_progress()
                     else:
                         if not settings_menu_rect.collidepoint(mx, my):
                             game_state = STATE_PLAY
@@ -1217,19 +1397,32 @@ async def main():
             if event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_ESCAPE:
                     game_state = STATE_SETTINGS
-                if event.key == pygame.K_LEFT:
-                    pigeon_lane_target -= 1
-                    pigeon_lane_target = max(0, pigeon_lane_target)
-                    pigeon_lean_dir = -1
-                if event.key == pygame.K_RIGHT:
-                    pigeon_lane_target += 1
-                    pigeon_lane_target = min(LANE_COUNT - 1, pigeon_lane_target)
-                    pigeon_lean_dir = 1
+                if event.key in (pygame.K_LEFT, pygame.K_a):
+                    move_lane(-1)
+                if event.key in (pygame.K_RIGHT, pygame.K_d):
+                    move_lane(1)
+
+            # touch: swipe left or right (finger events, scaled to game pixels)
+            if event.type == pygame.FINGERDOWN:
+                finger_seen = True
+                fx, fy = event.x * WIDTH, event.y * HEIGHT
+                if not settings_button_rect.collidepoint(fx, fy):
+                    swipe_start(fx, fy)
+            elif event.type == pygame.FINGERMOTION:
+                swipe_move(event.x * WIDTH)
+            elif event.type == pygame.FINGERUP:
+                swipe_end(event.x * WIDTH)
 
             if event.type == pygame.MOUSEBUTTONDOWN:
                 mx, my = event.pos
                 if settings_button_rect.collidepoint(mx, my):
                     game_state = STATE_SETTINGS
+                elif not finger_seen and not getattr(event, "touch", False):
+                    swipe_start(mx, my)   # mouse drag works like a swipe too
+            elif event.type == pygame.MOUSEMOTION and not finger_seen and not getattr(event, "touch", False):
+                swipe_move(event.pos[0])
+            elif event.type == pygame.MOUSEBUTTONUP and not finger_seen and not getattr(event, "touch", False):
+                swipe_end(event.pos[0])
 
         update_pigeon_lane()
 
@@ -1274,6 +1467,7 @@ async def main():
                 else:
                     coins += 1
                     total_coins_collected += 1
+                    progress_dirty = True
                     score += 25
                     play_sound_effect(coin_clink)  # Play coin sound
 
@@ -1338,6 +1532,9 @@ async def main():
                         pigeon_lane_pos = (LANE_COUNT - 1) / 2
                         pigeon_lane_target = pigeon_lane_pos
                     else:
+                        if current_mode == MODE_ENDLESS and score > best_endless_score:
+                            best_endless_score = score
+                        save_progress()
                         game_over_text = title_font.render("GAME OVER", True, (255, 50, 50))
                         WIN.blit(game_over_text, game_over_text.get_rect(center=(WIDTH // 2, 100)))
                         
@@ -1453,6 +1650,9 @@ async def main():
                         pigeon_lane_pos = (LANE_COUNT - 1) / 2
                         pigeon_lane_target = pigeon_lane_pos
                     else:
+                        if current_mode == MODE_ENDLESS and score > best_endless_score:
+                            best_endless_score = score
+                        save_progress()
                         game_over_text = title_font.render("GAME OVER", True, (255, 50, 50))
                         WIN.blit(game_over_text, game_over_text.get_rect(center=(WIDTH // 2, 100)))
                         
@@ -1568,8 +1768,20 @@ async def main():
             draw_level_progress()
         draw_score_and_coins()
         draw_settings_button()
+
+        if run_hint_frames > 0:
+            run_hint_frames -= 1
+            hint = "Swipe left or right to change lanes" if IS_TOUCH else "Use the left and right arrow keys to change lanes"
+            hint_surf = font.render(hint, True, (255, 255, 255))
+            box = hint_surf.get_rect(center=(WIDTH // 2, HEIGHT - 40)).inflate(24, 14)
+            panel = pygame.Surface(box.size, pygame.SRCALPHA)
+            panel.fill((20, 20, 30, 190))
+            WIN.blit(panel, box.topleft)
+            WIN.blit(hint_surf, hint_surf.get_rect(center=box.center))
+
         pygame.display.update()
 
+    save_progress()
     pygame.quit()
     sys.exit()
 

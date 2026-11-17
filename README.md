@@ -6,12 +6,15 @@ A lane-dodging arcade game written in Python with Pygame. You fly a carrier pige
 
 ## How to play
 
-- **Left and right arrow keys:** change lanes.
+Play it on a computer or a phone.
+
+- **Computer:** left and right arrow keys (or A and D) change lanes. Dragging with the mouse works too.
+- **Phone or tablet:** swipe left or right to change lanes. A long swipe crosses several lanes. Turn your phone sideways for the biggest view. To force phone controls on any device, add `?mobile=1` to the address.
 - **Esc** or the pause button: open settings.
 - Collect worms and medpacks to restore health, and coins to spend in The Coop.
 - **Story Mode** has ten missions, from the V-2 rocket sites to the Dutch famine of 1944–45. **Endless Flight** gets harder the longer you survive.
 
-The game was built for desktop and needs a keyboard.
+Your progress saves automatically: missions completed, total coins and your best Endless Flight score. In the browser it's kept in that browser's storage; on desktop it's written to `save.json` next to the game.
 
 ## The history
 
